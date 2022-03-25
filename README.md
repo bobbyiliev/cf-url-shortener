@@ -1,6 +1,6 @@
 # 👷 `mz-url-shortener` CF Worker
 
-Admin URL:
+Demo URL:
 
 https://cf-url-shortener.bobbyiliev.workers.dev/admin
 
@@ -9,6 +9,14 @@ Structure:
 - All data is stored in Upstash serverless Redis cluster as key-value pairs (short link -> long link).
 - Every time you visit a short link, it triggers an event and stores it in Upstash Kafka.
 - We then get the data from Upstash Kafka and analyze it in Materialize.
+
+## Diagram
+
+<img width="1325" alt="Diagram of Upstash and Materialize demo" src="https://user-images.githubusercontent.com/21223421/160150800-2d304712-13c1-4d15-910a-9f99b7b33771.png">
+
+## Demo
+
+![mz-upstash-demo](https://user-images.githubusercontent.com/21223421/160150872-58fca546-5a86-4132-8bb4-a989dc87ba83.gif)
 
 ## Running this demo
 
@@ -43,6 +51,7 @@ wrangler secret put UPSTASH_KAFKA_REST_URL
 wrangler secret put UPSTASH_KAFKA_REST_USERNAME
 wrangler secret put UPSTASH_KAFKA_REST_PASSWORD
 ```
+> Make sure to use the REST API URLs and not the Broker details.
 - Run the following command to deploy the CF Worker:
 ```
 wrangler deploy
@@ -69,23 +78,23 @@ After you've created the instance, you can connect to it using the `psql` comman
 Next, create a new Kafka source in Materialize:
 
 ```sql
-CREATE SOURCE stats
-  FROM KAFKA BROKER 'UPSTASH_KAFKA_REST_URL' TOPIC 'visits-log'
+CREATE SOURCE click_stats
+  FROM KAFKA BROKER 'UPSTASH_KAFKA_BROKER_URL' TOPIC 'visits-log'
   WITH (
       security_protocol = 'SASL_SSL',
       sasl_mechanisms = 'SCRAM-SHA-256',
-      sasl_username = 'UPSTASH_KAFKA_REST_USERNAME',
-      sasl_password = 'UPSTASH_KAFKA_REST_PASSWORD'
+      sasl_username = 'UPSTASH_KAFKA_BROKER_USERNAME',
+      sasl_password = 'UPSTASH_KAFKA_BROKER_PASSWORD'
   )
 FORMAT BYTES;
 ```
 
-> Change the Kafka details to match your Upstash Kafka cluster REST API URL and credentials.
+> Change the Kafka details to match your Upstash Kafka cluster Broker and credentials.
 
 Create a view:
 
 ```sql
-CREATE VIEW stats_v AS
+CREATE VIEW click_stats_v AS
     SELECT
         *
     FROM (
@@ -99,7 +108,7 @@ CREATE VIEW stats_v AS
             SELECT CAST(data AS jsonb) AS data
             FROM (
                 SELECT convert_from(data, 'utf8') AS data
-                FROM stats
+                FROM click_stats
             )
         )
     );
@@ -108,29 +117,46 @@ CREATE VIEW stats_v AS
 Create a materialized view to analyze the data in the Kafka source:
 
 ```sql
-CREATE MATERIALIZED VIEW stats_m AS
+CREATE MATERIALIZED VIEW click_stats_m AS
     SELECT
         *
-    FROM stats_v;
+    FROM click_stats_v;
 ```
 
 Query the materialized view:
 
 ```sql
-SELECT * FROM stats_m;
+SELECT * FROM click_stats_m;
+```
+
+Order by the number of clicks per short link:
+
+```sql
+CREATE MATERIALIZED VIEW order_by_clicks AS
+    SELECT
+        short_code,
+        COUNT(*) AS clicks
+    FROM click_stats_m
+    GROUP BY short_code;
+```
+
+Stream the data from the materialized view using `TAIL`:
+
+```sql
+COPY ( TAIL ( SELECT * FROM order_by_clicks ) ) TO STDOUT;
 ```
 
 ### Kafka sink:
 
 ```sql
 CREATE SINK stats_sink
-    FROM stats_v
-    INTO KAFKA BROKER 'UPSTASH_KAFKA_REST_URL' TOPIC 'stats-sink'
+    FROM click_stats_m
+    INTO KAFKA BROKER 'UPSTASH_KAFKA_BROKER_URL' TOPIC 'stats-sink'
     WITH (
       security_protocol = 'SASL_SSL',
       sasl_mechanisms = 'SCRAM-SHA-256',
-      sasl_username = 'UPSTASH_KAFKA_REST_USERNAME',
-      sasl_password = 'UPSTASH_KAFKA_REST_PASSWORD'
+      sasl_username = 'UPSTASH_KAFKA_BROKER_USERNAME',
+      sasl_password = 'UPSTASH_KAFKA_BROKER_PASSWORD'
     )
     FORMAT AVRO USING SCHEMA '{
         "type": "record",
