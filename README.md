@@ -1,14 +1,20 @@
-# 👷 `mz-url-shortener` CF Worker
+# 👷 URL Shortener
+
+This is a URL shortener that uses [Cloudflare Workers](https://www.cloudflare.com/workers/) to shorten URLs. It is powered by [Cloudflare Workers](https://www.cloudflare.com/workers/) and [Upstash](https://upstash.com/) Redis for storing data and Kafkar for storing the click events along with [Materialize](https://materialize.com/) for real-time data analytics.
 
 Demo URL:
 
 https://cf-url-shortener.bobbyiliev.workers.dev/admin
 
-Structure:
+App structure:
 - A serverless Cloudflare Worker that lets you add short links and redirect them to other URLs.
 - All data is stored in Upstash serverless Redis cluster as key-value pairs (short link -> long link).
 - Every time you visit a short link, it triggers an event and stores it in Upstash Kafka.
 - We then get the data from Upstash Kafka and analyze it in Materialize.
+
+Next steps:
+- Build a UI for the data coming from Materialize.
+- Add authentication to the app so that only admins can add links.
 
 ## Diagram
 
