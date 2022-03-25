@@ -1,68 +1,97 @@
 import { Router } from 'itty-router'
+import { Redis } from "@upstash/redis/cloudflare"
+import { Kafka } from "@upstash/kafka"
+
+import { urlSaveForm, homePage } from './templates'
+import { rawHtmlResponse, readRequestBody } from './functions'
 
 // Create a new router
 const router = Router()
+const redis = Redis.fromEnv()
 
 /*
-Our index route, a simple hello world.
+Index route - Landing page
 */
 router.get("/", () => {
-  return new Response("Hello, world! This is the root page of your Worker template.")
+  return rawHtmlResponse(homePage);
 })
 
 /*
-This route demonstrates path parameters, allowing you to extract fragments from the request
-URL.
-
-Try visit /example/hello and see the response.
+Admin route - URL form
 */
-router.get("/example/:text", ({ params }) => {
-  // Decode text like "Hello%20world" into "Hello world"
-  let input = decodeURIComponent(params.text)
-
-  // Construct a buffer from our input
-  let buffer = Buffer.from(input, "utf8")
-
-  // Serialise the buffer into a base64 string
-  let base64 = buffer.toString("base64")
-
-  // Return the HTML with the string to the client
-  return new Response(`<p>Base64 encoding: <code>${base64}</code></p>`, {
-    headers: {
-      "Content-Type": "text/html"
-    }
-  })
+router.get("/admin", async () => {
+  return rawHtmlResponse(urlSaveForm);
 })
 
 /*
-This shows a different HTTP method, a POST.
-
-Try send a POST request using curl or another tool.
-
-Try the below curl command to send JSON:
-
-$ curl -X POST <worker> -H "Content-Type: application/json" -d '{"abc": "def"}'
+API route to return all keys and values in Redis
 */
-router.post("/post", async request => {
-  // Create a base object with some fields.
-  let fields = {
-    "asn": request.cf.asn,
-    "colo": request.cf.colo
-  }
+router.get("/admin/urls", async () => {
+  const keys = await redis.keys("*")
+  // For each key get value
+  const values = await Promise.all(keys.map(async (key) => {
+    let value = await redis.get(key)
+    return { key, value }
+  }))
+  return rawHtmlResponse(JSON.stringify(values))
 
-  // If the POST data is JSON then attach it to our response.
-  if (request.headers.get("Content-Type") === "application/json") {
-    fields["json"] = await request.json()
-  }
+})
 
-  // Serialise the JSON to a string.
-  const returnData = JSON.stringify(fields, null, 2);
-
-  return new Response(returnData, {
-    headers: {
-      "Content-Type": "application/json"
-    }
+/*
+Short codes redirects
+*/
+router.get("/s/:url", async (request) => {
+  console.log("START")
+  const kafka = new Kafka({
+    url: UPSTASH_KAFKA_REST_URL,
+    username: UPSTASH_KAFKA_REST_USERNAME,
+    password: UPSTASH_KAFKA_REST_PASSWORD,
   })
+  const { params, query } = request
+
+  // Get value from Redis for short code
+  const value = await redis.get(params.url);
+  // If value is not found return 404
+  if (!value) {
+    return new Response("Not found", { status: 404 })
+  } else {
+    // If value is found return 302 redirect and store event in Kafka
+    let country = request.cf.country
+    let city = request.cf.city
+    let ip = request.headers.get('cf-connecting-ip') || 'unknown'
+
+    let message = {
+      shortCode: params.url,
+      longUrl: value,
+      country: country,
+      city: city,
+      ip: ip,
+    }
+
+    const p = kafka.producer()
+    p.produce("visits-log", message)
+
+    return new Response("", { status: 302, headers: { "Location": value } });
+  }
+
+})
+
+/*
+Save route - Save URL to Upstash Redis
+*/
+router.post("/admin/store", async request => {
+  const reqBody = await readRequestBody(request);
+  const body = await JSON.parse(reqBody);
+
+  try {
+    //const data = await redis.set('urls', '{ "longUrl": "' + body.longUrl + '" , "shortCode": "' + body.shortCode + '" }');
+    const data = await redis.set(body.shortCode, body.longUrl);
+    console.log(data);
+    // Redirect to /admin
+    return new Response("", { status: 302, headers: { "Location": "/admin" } });
+  } catch (error) {
+    return new Response(error);
+  }
 })
 
 /*
