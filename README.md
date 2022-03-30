@@ -1,18 +1,22 @@
 # 👷 URL Shortener
 
-This is a URL shortener that uses [Cloudflare Workers](https://www.cloudflare.com/workers/) to shorten URLs. It is powered by [Cloudflare Workers](https://www.cloudflare.com/workers/) and [Upstash](https://upstash.com/) Redis for storing data and Kafkar for storing the click events along with [Materialize](https://materialize.com/) for real-time data analytics.
+This is a Node.js URL shortener app that uses [Cloudflare Workers](https://www.cloudflare.com/workers/).
 
-Demo URL:
-
-https://cf-url-shortener.bobbyiliev.workers.dev/admin
+The app is powered by [Cloudflare Workers](https://www.cloudflare.com/workers/) and [Upstash](https://upstash.com/) Redis for storing data and Kafka for storing the click events along with [Materialize](https://materialize.com/) for real-time data analytics.
 
 App structure:
+
 - A serverless Cloudflare Worker that lets you add short links and redirect them to other URLs.
 - All data is stored in Upstash serverless Redis cluster as key-value pairs (short link -> long link).
 - Every time you visit a short link, it triggers an event and stores it in Upstash Kafka.
 - We then get the data from Upstash Kafka and analyze it in Materialize.
 
+A demo of the app can be found here:
+
+https://cf-url-shortener.bobbyiliev.workers.dev/admin
+
 Next steps:
+
 - Build a UI for the data coming from Materialize.
 - Add authentication to the app so that only admins can add links.
 
@@ -67,7 +71,7 @@ With the CF Worker deployed, you can visit the admin URL where you can add short
 
 ## Setup Materialize
 
-Once you've deployed the CF Worker, you can setup Materialize to analyze the data in Upstash Kafka in real time.
+Once you've deployed the CF Worker, you can set up Materialize to analyze the data in Upstash Kafka in real time.
 
 Start by creating a new Materialize instance in Materialize Cloud:
 
@@ -152,7 +156,12 @@ Stream the data from the materialized view using `TAIL`:
 COPY ( TAIL ( SELECT * FROM order_by_clicks ) ) TO STDOUT;
 ```
 
-### Kafka sink:
+<!-- ### Kafka sink:
+
+As of the time being inline avro schemas are not supported by Materialize.
+
+An issue to track Upstash CSR can be found here:
+https://github.com/upstash/issues/issues/20
 
 ```sql
 CREATE SINK stats_sink
@@ -169,4 +178,4 @@ CREATE SINK stats_sink
         "name": "envelope",
         "fields": { "name": "data", "type": "bytes" }
     }';
-```
+``` -->
