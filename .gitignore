@@ -3,3 +3,6 @@ worker/
 .cargo-ok
 package-lock.json
 dist/
+ca.crt
+materialize.crt
+materialize.key
