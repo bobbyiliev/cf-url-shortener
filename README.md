@@ -4,66 +4,93 @@ This is a Node.js URL shortener app that uses [Cloudflare Workers](https://www.c
 
 The app is powered by [Cloudflare Workers](https://www.cloudflare.com/workers/) and [Upstash](https://upstash.com/) Redis for storing data and Kafka for storing the click events along with [Materialize](https://materialize.com/) for real-time data analytics.
 
-App structure:
+[Upstash](https://upstash.com/) offers Serverless, Low latency, and pay-as-you-go solutions for Kafka and Redis.
+
+[Materialize](https://materialize.com) is a streaming database for real-time applications. Materialize accepts input data from a variety of streaming sources (like Kafka), data stores and databases (like S3 and Postgres), and files (like CSV and JSON), and lets you query them using SQL.
+
+## App structure
+
+The demo app has the following structure:
 
 - A serverless Cloudflare Worker that lets you add short links and redirect them to other URLs.
 - All data is stored in Upstash serverless Redis cluster as key-value pairs (short link -> long link).
 - Every time you visit a short link, it triggers an event and stores it in Upstash Kafka.
-- We then get the data from Upstash Kafka and analyze it in Materialize.
+- We then get the data from Upstash Kafka and analyze it in Materialize in real-time.
 
 A demo of the app can be found here:
 
 https://cf-url-shortener.bobbyiliev.workers.dev/admin
 
-Next steps:
-
-- Build a UI for the data coming from Materialize.
-- Add authentication to the app so that only admins can add links.
-
 ## Diagram
 
-<img width="1325" alt="Diagram of Upstash and Materialize demo" src="https://user-images.githubusercontent.com/21223421/160150800-2d304712-13c1-4d15-910a-9f99b7b33771.png">
+The following is a diagram of the app structure:
+
+![Diagram of Upstash and Materialize demo](https://user-images.githubusercontent.com/21223421/160150800-2d304712-13c1-4d15-910a-9f99b7b33771.png)
 
 ## Demo
 
+Here is a quick demo of how the app works:
+
 ![mz-upstash-demo](https://user-images.githubusercontent.com/21223421/160150872-58fca546-5a86-4132-8bb4-a989dc87ba83.gif)
+
+## Prerequisites
+
+Before you get started, you need to make sure that you have the following
+
+- A Redis cluster and a Kafka cluster in Upstash.
+- A Kafka topic in Upstash called `visits-log`.
+- The Cloudflare CLI tool called `wrangler` on your local machine as described [here](https://developers.cloudflare.com/workers/cli-wrangler/install-update/)
+- A Materialize instance running on your local machine as described [here](https://materialize.com/docs/install/) or a [Materialize Cloud instance](https://cloud.materialize.com/deployments).
 
 ## Running this demo
 
-- Create a Redis cluster and a Kafka cluster in Upstash.
-- Create a Kafka topic in Upstash called `visits-log`.
-- Install the Cloudflare CLI tool called `wrangler` on your local machine as described [here](https://developers.cloudflare.com/workers/cli-wrangler/install-update/)
-- Clone the repo:
-```
+Once you have all the prerequisites, you can proceed with the following steps:
+
+- Clone the repository and run the following command:
+
+```bash
 git clone https://github.com/bobbyiliev/cf-url-shortener.git
 ```
+
 - Access the directory:
-```
+
+```bash
 cd cf-url-shortener
 ```
+
 - Install the `npm` dependencies:
-```
+
+```bash
 npm install
 ```
+
 - Run the `wrangler` command to authenticate with Cloudflare:
-```
+
+```bash
 wrangler login
 ```
+
 - Then in the `wrangler.toml` file, update the `account_id` to match your Cloudflare account ID:
-```
+
+```toml
 account_id = "YOUR_ACCOUNT_ID_HERE"
 ```
+
 - Set the following secrets in Cloudflare using the `wrangler` tool:
-```
+
+```bash
 wrangler secret put UPSTASH_REDIS_REST_URL
 wrangler secret put UPSTASH_REDIS_REST_TOKEN
 wrangler secret put UPSTASH_KAFKA_REST_URL
 wrangler secret put UPSTASH_KAFKA_REST_USERNAME
 wrangler secret put UPSTASH_KAFKA_REST_PASSWORD
 ```
-> Make sure to use the REST API URLs and not the Broker details.
+
+> Make sure to use the **REST API URLs** and not the Broker details.
+
 - Run the following command to deploy the CF Worker:
-```
+
+```bash
 wrangler deploy
 ```
 
@@ -71,7 +98,7 @@ With the CF Worker deployed, you can visit the admin URL where you can add short
 
 ## Setup Materialize
 
-Once you've deployed the CF Worker, you can set up Materialize to analyze the data in Upstash Kafka in real time.
+Once you've deployed the CF Worker, you can set up Materialize to analyze the data in Upstash Kafka in real-time.
 
 Start by creating a new Materialize instance in Materialize Cloud:
 
@@ -83,9 +110,11 @@ Or alternatively, you can install Materialize locally:
 
 After you've created the instance, you can connect to it using the `psql` command as shown in the docs.
 
-### Kafka sources
+### Create a [Kafka Source](https://materialize.com/docs/sql/create-source/kafka/)
 
-Next, create a new Kafka source in Materialize:
+The `CREATE SOURCE` statements allow you to connect Materialize to an external Kafka data source and lets you interact with its data as if the data were in a SQL table.
+
+To create a new Kafka source in Materialize run the following statement:
 
 ```sql
 CREATE SOURCE click_stats
@@ -101,7 +130,7 @@ FORMAT BYTES;
 
 > Change the Kafka details to match your Upstash Kafka cluster Broker and credentials.
 
-Create a view:
+Next, we will create a [NON-materialized View](https://materialize.com/docs/sql/create-view), which you can think of as kind of a reusable template to be used in other materialized views:
 
 ```sql
 CREATE VIEW click_stats_v AS
@@ -124,7 +153,7 @@ CREATE VIEW click_stats_v AS
     );
 ```
 
-Create a materialized view to analyze the data in the Kafka source:
+Finally, create a [**materialized view**](https://materialize.com/docs/sql/create-materialized-view) to analyze the data in the Kafka source:
 
 ```sql
 CREATE MATERIALIZED VIEW click_stats_m AS
@@ -133,13 +162,13 @@ CREATE MATERIALIZED VIEW click_stats_m AS
     FROM click_stats_v;
 ```
 
-Query the materialized view:
+Then you can query the materialized view just using standard SQL, but get the data in real-time, with sub-millisecond latency:
 
 ```sql
 SELECT * FROM click_stats_m;
 ```
 
-Order by the number of clicks per short link:
+You can stack up materialized views together, so let's order by the number of clicks per short link:
 
 ```sql
 CREATE MATERIALIZED VIEW order_by_clicks AS
@@ -150,11 +179,43 @@ CREATE MATERIALIZED VIEW order_by_clicks AS
     GROUP BY short_code;
 ```
 
-Stream the data from the materialized view using `TAIL`:
+One of the great features of Materialize is `TAIL`.
+
+`TAIL` streams updates from a source, table, or view as they occur.
+
+So to stream the data from our materialized view using `TAIL`, we can use the following statement:
 
 ```sql
 COPY ( TAIL ( SELECT * FROM order_by_clicks ) ) TO STDOUT;
 ```
+
+For more information about `TAIL`, check out this blog post:
+
+> [Subscribe to changes in a view with TAIL in Materialize](https://materialize.com/subscribe-to-changes-in-a-view-with-tail-in-materialize/)
+
+## Display the results in Metabase
+
+As Materialize is Postgres-wire compatible, you can use BI tools like Metabase to create business intelligence dashboards using the real-time data streams in your Materialize instance.
+
+For more information about Metabase + Materialize, check out the official documentation:
+
+> [Metabase + Materialize](https://materialize.com/docs/third-party/metabase/)
+
+Example dashboard that shows the number of clicks per short link:
+
+![Materialize Metabase Dashboard](https://user-images.githubusercontent.com/21223421/162766444-5b78f011-9f0a-4515-9998-d8836040ddd7.png)
+
+## Conclusion
+
+Using Materialize to analyze the data in your Upstash Kafka serverless instance is a great way to get real-time insights into your data.
+
+As a next step, here are some other great resources to learn about Materialize and Upstash:
+
+- [Materialize](https://materialize.com/)
+- [Upstash](https://upstash.com/)
+- [Upstash Kafka](https://upstash.com/kafka/)
+- [Upstash Redis](https://upstash.com/redis/)
+- [Materialize Docs](https://materialize.com/docs/)
 
 <!-- ### Kafka sink:
 
