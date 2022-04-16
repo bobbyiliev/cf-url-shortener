@@ -49,7 +49,7 @@ export const urlSaveForm = `<html lang="en">
                                 <div class="w-3 h-3 bg-gray-200 rounded-full"></div>
                             </div>
                         </div>
-                        <div class="box-content w-full bg-gray-100 h-96">
+                        <div class="box-content w-full bg-gray-100 h-96 overflow-auto">
                             <table id="table" class="w-full text-left text-sm">
                                 <thead>
                                     <tr>
